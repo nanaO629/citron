@@ -252,7 +252,7 @@ function calcDealPoints(rec){
   const qty = Number(rec.qty||1);
   if(rec.type==='bottle'){
     const price = Number(rec.price||0);
-    return qty * price * 0.01; 
+    return qty * price * 0.0001; 
   }
   return qty * (UNIT_POINTS[rec.type]||0);
 }
