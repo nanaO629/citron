@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>シトロンポイント管理 & 時給計算</title>
+<style>
+  :root{
+    --pink:#f8cfe5;
+    --pink2:#ffdff0;
+    --ink:#333;
+    --line:#e7e7e7;
+    --accent:#ff7fb0;
+  }
+  *{box-sizing:border-box}
+  body{
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic","Meiryo",sans-serif;
+    margin:0;
+    color:var(--ink);
+    background:#fff;
+  }
+  header{
+    position:sticky;top:0;z-index:10;
+    background:linear-gradient(180deg,var(--pink),var(--pink2));
+    border-bottom:2px solid var(--accent);
+    padding:10px 16px;
+  }
+  header h1{margin:0;font-size:18px}
+  .container{padding:16px; max-width:1100px; margin:0 auto;}
+  .grid{display:grid; grid-template-columns:1fr; gap:16px}
+  @media (min-width:900px){
+    .grid{grid-template-columns: 1.2fr 1fr}
+  }
+  section{
+    background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px;
+    box-shadow: 0 1px 0 rgba(0,0,0,.03);
+  }
+  h2{margin:2px 0 10px; font-size:16px; border-left:6px solid var(--accent); padding-left:8px}
+  h3{margin:8px 0; font-size:14px; color:#666}
+  label{font-size:13px; color:#444; margin-right:8px}
+  input, select, button, textarea{
+    font-size:14px; padding:7px 9px; border:1px solid #ccc; border-radius:8px; background:#fff;
+  }
+  input[type="number"]{width:8em}
+  table{width:100%; border-collapse:collapse; font-size:13px}
+  th, td{border-bottom:1px solid var(--line); padding:6px 8px; text-align:right}
+  th{text-align:center; background:#fafafa}
+  td.left{text-align:left}
+  .muted{color:#888}
+  .pill{display:inline-block; padding:2px 8px; border-radius:999px; background:#ffe6f2; border:1px solid #ffd4ea; font-size:12px}
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+  .row > *{margin:4px 0}
+  .btn{cursor:pointer; border:1px solid var(--accent); color:#fff; background:var(--accent); font-weight:600}
+  .btn.ghost{background:#fff; color:var(--accent)}
+  .btn.small{padding:6px 10px; font-size:12px}
+  .kpi{display:grid; grid-template-columns: repeat(2,1fr); gap:10px}
+  .kpi .card{border:1px dashed #ffd4ea; background:#fff7fb; border-radius:10px; padding:10px}
+  .kpi .num{font-weight:700; font-size:18px}
+  footer{color:#777; font-size:12px; text-align:center; padding:24px}
+  details{background:#fffafb; border:1px dashed #ffd4ea; padding:10px; border-radius:8px}
+  .danger{color:#b00020}
+</style>
+</head>
+<body>
+  <header>
+    <h1>ドリンク・同伴・指名の <b>ポイント管理 & 時給計算</b></h1>
+    <div class="row">
+      <label>対象月：
+        <input id="monthPicker" type="month">
+      </label>
+      <span class="pill" id="ruleNote">締め：15日／月末（画像のルール）</span>
+      <button class="btn small ghost" onclick="exportMonth()">この月をエクスポート</button>
+      <input id="importFile" type="file" accept="application/json" style="display:none" />
+      <button class="btn small ghost" onclick="document.getElementById('importFile').click()">インポート</button>
+      <button class="btn small" onclick="resetMonth()">この月を全削除</button>
+    </div>
+  </header>
+  <div class="container grid">
+    <section id="inputs">
+      <h2>1) 実績の入力</h2>
+      <h3>ドリンク / 同伴 / 指名 / ボトル</h3>
+      <div class="row">
+        <label>日付 <input type="date" id="dealDate"></label>
+        <label>種類
+          <select id="dealType" onchange="togglePrice()">
+            <option value="douhan">同伴 (2P)</option>
+            <option value="shimei">指名 (1.5P)</option>
+            <option value="drinkS">ドリンクS (0.5P)</option>
+            <option value="drinkM">ショット・ドリンクM (0.7P)</option>
+            <option value="kokabomu">コカボム (0.7P)</option>
+            <option value="drinkL">ドリンクL (1.3P)</option>
+            <option value="tequila1800">テキーラ1800 (1.4P)</option>
+            <option value="bottle">ボトル/シャンパン (販売価格×0.01%)</option>
+          </select>
+        </label>
+        <label>数量 <input type="number" id="dealQty" step="1" min="1" value="1"></label>
+        <label id="priceWrap" style="display:none">販売価格(円) <input type="number" id="dealPrice" step="1" min="0" value="0"></label>
+        <button class="btn" onclick="addDeal()">追加</button>
+      </div>
+
+      <h3 style="margin-top:16px">シフト（労働時間）</h3>
+      <div class="row">
+        <label>日付 <input type="date" id="shiftDate"></label>
+        <label>時間（h）<input type="number" id="shiftHours" min="0" step="0.25" value="5"></label>
+        <button class="btn" onclick="addShift()">追加</button>
+      </div>
+
+      <details style="margin-top:14px">
+        <summary>ポイント計上ルール（画像の再現）</summary>
+        <ul>
+          <li>同伴: <b>2P</b> ／ 指名: <b>1.5P</b></li>
+          <li>ドリンクS: <b>0.5P</b> ／ ショット・ドリンクM: <b>0.7P</b> ／ コカボム: <b>0.7P</b></li>
+          <li>ドリンクL: <b>1.3P</b> ／ テキーラ1800: <b>1.4P</b></li>
+          <li>ボトル/シャンパン: <b>販売価格 × 0.01%</b>（＝ 1万¥ごとに 1P）</li>
+        </ul>
+        <p>時給は累計ポイントで決定：</p>
+        <div style="overflow:auto">
+          <table>
+            <thead><tr><th>ポイント以上</th><th>時給 (円)</th></tr></thead>
+            <tbody id="wageTableBody"></tbody>
+          </table>
+        </div>
+        <p class="muted">240P（時給3300円）以降は <b>15Pごとに +100円</b> で自動計算。</p>
+        <p class="muted">締めは <b>① 1〜15日</b>（15日時点の時給×労働時間）と <b>② 16日〜月末</b>（月末時点の時給×労働時間）の合算です。</p>
+      </details>
+    </section>
+
+    <section id="summary">
+      <h2>2) 月次サマリー & 計算</h2>
+      <div class="kpi">
+        <div class="card">
+          <div>当月の累計ポイント</div>
+          <div class="num"><span id="sumPts">0.0</span>P</div>
+          <div class="muted">本日まで：<span id="todayPts">0.0</span>P</div>
+        </div>
+        <div class="card">
+          <div>時給プレビュー</div>
+          <div class="num"><span id="todayWage">-</span> 円</div>
+          <div class="muted">次の昇給まで <span id="toNext">-</span>P</div>
+        </div>
+      </div>
+
+      <h3 style="margin-top:12px">締め計算</h3>
+      <table>
+        <thead>
+          <tr><th>区間</th><th>対象日</th><th>累計ポイント</th><th>適用時給</th><th>労働時間</th><th>支給額</th></tr>
+        </thead>
+        <tbody id="closingRows"></tbody>
+        <tfoot>
+          <tr><th class="left" colspan="5">合計</th><th id="totalPay" style="text-align:right">0</th></tr>
+        </tfoot>
+      </table>
+
+      <h3 style="margin-top:12px">入力一覧（編集・削除可能）</h3>
+      <div style="display:grid; grid-template-columns:1fr; gap:14px">
+        <div>
+          <b>ドリンク/同伴/指名</b>
+          <table id="dealsTable">
+            <thead>
+              <tr><th>日付</th><th>種類</th><th>数量</th><th>価格</th><th>ポイント</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div>
+          <b>シフト</b>
+          <table id="shiftsTable">
+            <thead>
+              <tr><th>日付</th><th>時間(h)</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+ 
+
+<script>
+// ========= 定数 =========
+const UNIT_POINTS = {
+  douhan: 2.0,
+  shimei: 1.5,
+  drinkS: 0.5,
+  drinkM: 0.7,        // ショット・ドリンクM
+  kokabomu: 0.7,      // コカボム
+  drinkL: 1.3,
+  tequila1800: 1.4,
+  // bottle は販売価格ベース（下の calcDealPoints で計算）
+};
+
+const BASE_BRACKETS = [
+  {pts:   0, wage: 1400},
+  {pts:  24, wage: 1500},
+  {pts:  36, wage: 1600},
+  {pts:  48, wage: 1700},
+  {pts:  60, wage: 1800},
+  {pts:  72, wage: 1900},
+  {pts:  84, wage: 2000},
+  {pts:  96, wage: 2100},
+  {pts: 108, wage: 2200},
+  {pts: 120, wage: 2300},
+  {pts: 132, wage: 2400},
+  {pts: 144, wage: 2500},
+  {pts: 156, wage: 2600},
+  {pts: 168, wage: 2700},
+  {pts: 180, wage: 2800},
+  {pts: 192, wage: 2900},
+  {pts: 204, wage: 3000},
+  {pts: 216, wage: 3100},
+  {pts: 228, wage: 3200},
+  {pts: 240, wage: 3300}, // 以降は15Pごとに+100円
+];
+
+// 240P超は +15Pごとに+100円
+function wageFromPoints(p){
+  p = Math.max(0, Number(p)||0);
+  let w = 1400;
+  for(const b of BASE_BRACKETS){
+    if(p >= b.pts){ w = b.wage; }
+  }
+  if(p > 240){
+    const extra = Math.floor((p - 240)/15);
+    w = 3300 + extra*100;
+  }
+  return w;
+}
+function nextRaiseAt(p){
+  p = Math.max(0, Number(p)||0);
+  if(p < 240){
+    const next = BASE_BRACKETS.find(b => b.pts > p);
+    return next ? next.pts : 240;
+  }else{
+    const rem = (p - 240) % 15;
+    return p + (rem === 0 ? 15 : (15 - rem));
+  }
+}
+function formatYen(n){
+  return (Math.round(n)).toLocaleString('ja-JP', {maximumFractionDigits:0});
+}
+function fmt(n, d=1){ return Number(n||0).toFixed(d); }
+
+// ========= ストレージ =========
+function monthKey(ym){ return `galbar-${ym}`; }
+function loadMonth(ym){
+  const raw = localStorage.getItem(monthKey(ym));
+  if(!raw) return {deals:[], shifts:[]};
+  try { return JSON.parse(raw); } catch{ return {deals:[], shifts:[]}; }
+}
+function saveMonth(ym, data){
+  localStorage.setItem(monthKey(ym), JSON.stringify(data));
+}
+
+// ========= UI ユーティリティ =========
+function togglePrice(){
+  const t = document.getElementById('dealType').value;
+  document.getElementById('priceWrap').style.display = (t==='bottle') ? '' : 'none';
+}
+function todayStr(){
+  const dt = new Date();
+  return dt.toISOString().slice(0,10);
+}
+function monthStr(dt=new Date()){
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth()+1).padStart(2,'0');
+  return `${y}-${m}`;
+}
+function endOfMonth(ym){
+  const [y,m] = ym.split('-').map(Number);
+  const d = new Date(y, m, 0); // day 0 of next month = end of month
+  return d.getDate();
+}
+
+// ========= ポイント計算 =========
+function calcDealPoints(rec){
+  const qty = Number(rec.qty||1);
+  if(rec.type === 'bottle'){
+    const price = Number(rec.price||0);
+    return qty * price * 0.0001; // 0.01% → 1万で1P
+  }
+  const unit = UNIT_POINTS[rec.type] || 0;
+  return qty * unit;
+}
+
+// ========= 画面構築 =========
+const monthPicker = document.getElementById('monthPicker');
+monthPicker.value = monthStr();
+document.getElementById('dealDate').value = todayStr();
+document.getElementById('shiftDate').value = todayStr();
+togglePrice();
+
+const state = { ym: monthPicker.value, data: loadMonth(monthPicker.value) };
+
+function renderWageTable(){
+  const tbody = document.getElementById('wageTableBody');
+  tbody.innerHTML = "";
+  for(const b of BASE_BRACKETS){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${b.pts}P〜</td><td>${formatYen(b.wage)}</td>`;
+    tbody.appendChild(tr);
+  }
+  const extra = document.createElement('tr');
+  extra.innerHTML = `<td>以降 15Pごと</td><td>時給 +100円</td>`;
+  tbody.appendChild(extra);
+}
+renderWageTable();
+
+function renderTables(){
+  // deals
+  const dealsTb = document.querySelector('#dealsTable tbody');
+  dealsTb.innerHTML = "";
+  state.data.deals
+    .sort((a,b)=> a.date.localeCompare(b.date))
+    .forEach((rec, i)=>{
+      const p = calcDealPoints(rec);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${rec.date}</td>
+        <td class="left">${labelOf(rec.type)}</td>
+        <td>${rec.qty}</td>
+        <td>${rec.type==='bottle' ? formatYen(rec.price) : '-'}</td>
+        <td>${fmt(p,1)}P</td>
+        <td><button class="btn small ghost" onclick="delDeal(${i})">削除</button></td>`;
+      dealsTb.appendChild(tr);
+    });
+
+  // shifts
+  const sTb = document.querySelector('#shiftsTable tbody');
+  sTb.innerHTML = "";
+  state.data.shifts
+    .sort((a,b)=> a.date.localeCompare(b.date))
+    .forEach((rec, i)=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${rec.date}</td>
+        <td>${Number(rec.hours).toFixed(2)}</td>
+        <td><button class="btn small ghost" onclick="delShift(${i})">削除</button></td>`;
+      sTb.appendChild(tr);
+    });
+
+  renderSummary();
+}
+
+function labelOf(type){
+  switch(type){
+    case 'douhan': return '同伴';
+    case 'shimei': return '指名';
+    case 'drinkS': return 'ドリンクS';
+    case 'drinkM': return 'ショット・ドリンクM';
+    case 'kokabomu': return 'コカボム';
+    case 'drinkL': return 'ドリンクL';
+    case 'tequila1800': return 'テキーラ1800';
+    case 'bottle': return 'ボトル/シャンパン';
+    default: return type;
+  }
+}
+
+function addDeal(){
+  const date = document.getElementById('dealDate').value;
+  const type = document.getElementById('dealType').value;
+  const qty = Number(document.getElementById('dealQty').value||1);
+  const price = Number(document.getElementById('dealPrice').value||0);
+  if(!date){ alert('日付を入れてください'); return; }
+  state.data.deals.push({date, type, qty, price});
+  saveMonth(state.ym, state.data);
+  renderTables();
+}
+function delDeal(idx){
+  if(!confirm('このレコードを削除しますか？')) return;
+  state.data.deals.splice(idx,1);
+  saveMonth(state.ym, state.data);
+  renderTables();
+}
+
+function addShift(){
+  const date = document.getElementById('shiftDate').value;
+  const hours = Number(document.getElementById('shiftHours').value||0);
+  if(!date){ alert('日付を入れてください'); return; }
+  if(hours<=0){ alert('時間(h)を正しく入れてください'); return; }
+  state.data.shifts.push({date, hours});
+  saveMonth(state.ym, state.data);
+  renderTables();
+}
+function delShift(idx){
+  if(!confirm('このシフトを削除しますか？')) return;
+  state.data.shifts.splice(idx,1);
+  saveMonth(state.ym, state.data);
+  renderTables();
+}
+
+function pointsUntil(day){
+  // 指定日（1..EOM）までの累計ポイント
+  return state.data.deals.reduce((s,rec)=>{
+    const d = Number(rec.date.split('-')[2]);
+    if(!isNaN(d) && d <= day){ return s + calcDealPoints(rec); }
+    return s;
+  }, 0);
+}
+function hoursBetween(d1,d2){
+  // d1..d2 を含む日付の合計時間
+  return state.data.shifts.reduce((s,rec)=>{
+    const d = Number(rec.date.split('-')[2]);
+    if(!isNaN(d) && d>=d1 && d<=d2){ return s + Number(rec.hours||0); }
+    return s;
+  }, 0);
+}
+
+function renderSummary(){
+  const eom = endOfMonth(state.ym);
+  const pts15  = pointsUntil(15);
+  const ptsEOM = pointsUntil(eom);
+  const hrs1 = hoursBetween(1,15);
+  const hrs2 = hoursBetween(16,eom);
+
+  // KPI
+  document.getElementById('sumPts').textContent = fmt(ptsEOM,1);
+  // 今日までのポイント（選択月が現在月のときのみ今日の日）
+  const now = new Date();
+  const thisYm = monthStr(now);
+  const todayDay = thisYm===state.ym ? now.getDate() : eom;
+  const ptsToday = pointsUntil(todayDay);
+  document.getElementById('todayPts').textContent = fmt(ptsToday,1);
+  const wageToday = wageFromPoints(ptsToday);
+  document.getElementById('todayWage').textContent = formatYen(wageToday);
+  const nextAt = nextRaiseAt(ptsToday);
+  const toNext = Math.max(0, nextAt - ptsToday);
+  document.getElementById('toNext').textContent = fmt(toNext,1);
+
+  // 締め表
+  const w1 = wageFromPoints(pts15);
+  const w2 = wageFromPoints(ptsEOM);
+  const pay1 = w1 * hrs1;
+  const pay2 = w2 * hrs2;
+
+  const tbody = document.getElementById('closingRows');
+  tbody.innerHTML = `
+    <tr>
+      <td class="left">① 前半</td>
+      <td>1〜15日</td>
+      <td>${fmt(pts15,1)}P</td>
+      <td>${formatYen(w1)}</td>
+      <td>${hrs1.toFixed(2)}h</td>
+      <td>${formatYen(pay1)}</td>
+    </tr>
+    <tr>
+      <td class="left">② 後半</td>
+      <td>16〜${eom}日</td>
+      <td>${fmt(ptsEOM,1)}P</td>
+      <td>${formatYen(w2)}</td>
+      <td>${hrs2.toFixed(2)}h</td>
+      <td>${formatYen(pay2)}</td>
+    </tr>
+  `;
+  document.getElementById('totalPay').textContent = formatYen(pay1+pay2);
+}
+
+// ========= 月変更 / 取り込み・書き出し =========
+monthPicker.addEventListener('change', ()=>{
+  state.ym = monthPicker.value;
+  state.data = loadMonth(state.ym);
+  renderTables();
+});
+
+function resetMonth(){
+  if(!confirm('この月のデータをすべて削除しますか？')) return;
+  state.data = {deals:[], shifts:[]};
+  saveMonth(state.ym, state.data); renderTables();
+}
+
+function exportMonth(){
+  const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${state.ym}-galbar.json`;
+  a.click();
+}
+
+document.getElementById('importFile').addEventListener('change', (ev)=>{
+  const f = ev.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const obj = JSON.parse(reader.result);
+      if(!obj || !obj.ym || !obj.data){ alert('不正なファイルです'); return; }
+      localStorage.setItem(monthKey(obj.ym), JSON.stringify(obj.data));
+      if(obj.ym === state.ym){ state.data = obj.data; renderTables(); }
+      alert('取り込みました');
+    }catch(e){
+      alert('読み込みに失敗しました');
+    }
+  };
+  reader.readAsText(f);
+});
+
+// 初期描画
+renderTables();
+</script>
+</body>
+</html>
